@@ -226,7 +226,7 @@ void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]){
     struct cache * temp=NULL;
     temp->ipAddress=ip;
     memcpy(temp->macAddress, mac,ETHER_ADDR_LEN);
-    
+    ///TODO check if the new cache is already in the cache if so do not add it maybe?
     if (cache) {
         struct cache * walker=cache;
         while (!walker) {
