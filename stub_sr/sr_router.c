@@ -22,6 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 #define DEBUG 1
+
+struct cache * cache=NULL;
 /*--------------------------------------------------------------------- 
  * Method: sr_init(void)
  * Scope:  Global
@@ -127,7 +129,7 @@ void sr_handleIPpacket(struct sr_instance* sr,
         ipheader->ip_sum = 0;
         ipheader->ip_sum = ip_checksum(ipheader,20);//maybe better??
         struct sr_rt* temp = sr->routing_table;
-        struct sr_rt* default_route = NULL;
+//        struct sr_rt* default_route = NULL;
         struct sr_rt* route = NULL;
         while (temp!=NULL) {
             if(DEBUG)
@@ -210,6 +212,9 @@ void sr_handleARPpacket(struct sr_instance* sr,
         
         if(DEBUG)
             printf("*** packet with ARP_REPLY\n");
+        if (cache==NULL) {
+            addNewCache(arp_header->ar_sip,arp_header->ar_sha);
+        }
         
         
     }
@@ -217,7 +222,35 @@ void sr_handleARPpacket(struct sr_instance* sr,
     
 }/* end sr_handleARPpacket */
 
+void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]){
+    struct cache * temp=NULL;
+    temp->ipAddress=ip;
+    memcpy(temp->macAddress, mac,ETHER_ADDR_LEN);
+    
+    if (cache) {
+        struct cache * walker=cache;
+        while (!walker) {
+            walker=walker->next;
+        }
+        walker->next=temp;
+    }
+    else{
+        cache=temp;
+    }
+}
 
+void printCache(){
+    struct cache * walker=cache;
+    while (cache) {
+        printf("IP: %d\n",walker->ipAddress);
+        printf("MAC: ");
+        for (int i=0; i<ETHER_ADDR_LEN; i++) {
+            printf("%c",walker->macAddress[i]);
+        }
+        printf("\n");
+        walker=walker->next;
+    }
+}
 
 /*
  **************************************************************************
