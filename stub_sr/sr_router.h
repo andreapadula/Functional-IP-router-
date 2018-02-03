@@ -82,11 +82,19 @@ void sr_handleARPpacket(struct sr_instance* sr,uint8_t * packet/* lent */,unsign
 void sr_handleIPpacket(struct sr_instance* sr,uint8_t * packet/* lent */,unsigned int len,struct sr_if* inter,/* lent */struct sr_ethernet_hdr* header);
 uint16_t ip_checksum(void* vdata,size_t length);
 uint16_t cksum(uint16_t *buf, int count);
+void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]);
+void printCache();
+
+
+
+
+
+
+
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );
 void sr_set_ether_ip(struct sr_instance* , uint32_t );
 void sr_set_ether_addr(struct sr_instance* , const unsigned char* );
 void sr_print_if_list(struct sr_instance* );
-void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]);
-void printCache();
+
 #endif /* SR_ROUTER_H */
