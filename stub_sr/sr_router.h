@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "sr_protocol.h"
 #ifdef VNL
@@ -67,6 +68,21 @@ struct cache
     struct cache * next;
 };
 
+struct cachePackets
+{
+    uint8_t * packet;
+    int length;
+    struct sr_instance* sr;
+    char * inter;
+    struct cachePackets *next;
+}cachePackets;
+
+
+
+
+
+
+
 /* -- sr_main.c -- */
 int sr_verify_routing_table(struct sr_instance* sr);
 
@@ -78,17 +94,23 @@ int sr_read_from_server(struct sr_instance* );
 /* -- sr_router.c -- */
 void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
-void sr_handleARPpacket(struct sr_instance* sr,uint8_t * packet/* lent */,unsigned int len,struct sr_if* inter,/* lent */struct sr_ethernet_hdr* header);
+void sr_handleARPpacket(struct sr_instance* sr,uint8_t * packet/* lent */,unsigned int len,struct sr_if* inter,/* lent */struct sr_ethernet_hdr* header,char* interface);
 void sr_handleIPpacket(struct sr_instance* sr,uint8_t * packet/* lent */,unsigned int len,struct sr_if* inter,/* lent */struct sr_ethernet_hdr* header);
 uint16_t ip_checksum(void* vdata,size_t length);
 uint16_t cksum(uint16_t *buf, int count);
 void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]);
 void printCache();
+bool checkCache(uint32_t ip);
+void setIPchecksum(struct ip* ip_hdr);
+struct sr_rt* RoutingTableLookUp(struct sr_instance* sr,uint32_t ipTarget);
+void ForwardPacket(struct sr_instance * sr,struct sr_rt* newInterface,struct sr_ethernet_hdr * header,uint8_t * packet,unsigned int len,struct ip * ipheader, struct cache * node);
+struct cache * getNode(uint32_t ip);
+void sendARPrequest(struct sr_instance * sr, uint32_t dst_ip, char* interface,struct sr_rt* newInterface);
+void cachePacket(uint8_t *packet, struct sr_ethernet_hdr * eth_hdr, int len,struct sr_instance* sr,char *interface);
 
 
-
-
-
+bool  isGateway(uint32_t ipAddToMatch, struct sr_instance* sr);
+void sendCachedPacket(uint32_t ip_addr);
 
 
 /* -- sr_if.c -- */
