@@ -61,7 +61,7 @@ foreach $f(@ifs) {
     $ip = $addr{$f};
     if($command eq 'ping') {
         print "ping $f 10 times: ";
-        $ret = `$ping $ip`;
+        $ret = `$ping $ip > prova.txt`;
         if($ret =~ /(\d+)\% packet loss/) {;
             print 100-$1, "%\n";
         } else {
