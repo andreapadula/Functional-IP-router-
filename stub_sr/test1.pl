@@ -44,13 +44,13 @@ $command = shift @ARGV;
 
 if($ARGV[0] eq 'all') {
     if($command eq 'ping') {
-        @ifs = ("eth0", "eth1", "eth2");
+        @ifs = ("eth0", "eth1", "eth2","s1", "s2");
     }
     elsif ($command eq 'tr') {
         @ifs = ("s1", "s3");
     }
     elsif ($command eq 'web') {
-        @ifs = ("s2", "s4");
+        @ifs = ("s1", "s2");
     }
 } else {
     @ifs = @ARGV;

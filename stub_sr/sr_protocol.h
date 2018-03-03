@@ -149,5 +149,10 @@ struct sr_arphdr
     uint32_t        ar_tip;             /* target IP address            */
 } __attribute__ ((packed)) ;
 
+struct icmp{
+    uint8_t type;
+    uint8_t code;
+    uint16_t sum;
+}__attribute__ ((packed)) ;
 
 #endif /* -- SR_PROTOCOL_H -- */

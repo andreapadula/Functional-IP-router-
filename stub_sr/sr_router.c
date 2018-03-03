@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <assert.h>
 
-
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_router.h"
@@ -83,9 +82,23 @@ void sr_handlepacket(struct sr_instance* sr,
     if(htons(header->ether_type)==ETHERTYPE_IP){
         if(DEBUG)
             printf("*** packet of TYPE IP \n");
+        struct sr_if * iface = sr->if_list;
         struct sr_if* inter = sr_get_interface(sr, interface);
-        sr_handleIPpacket(sr,packet,len,inter,header);
+        struct ip * ipheader = ((struct ip*)(packet + sizeof(struct sr_ethernet_hdr)));
+        uint32_t destinationIP = ipheader->ip_dst.s_addr;
+        while(iface)
+        {
+            if(iface->ip == destinationIP )
+            {
+                printf("\nICMP Packet for Interface ===============================%s\n",iface->name);
+                sr_handleICMPpacket(sr,packet,len,inter,header,interface);// Forumlate the ICMP PACKET TO SEND
+                return;
+            }
+            iface = iface->next;
+        }
         
+        
+        sr_handleIPpacket(sr,packet,len,inter,header);
     }
     else if(htons(header->ether_type)==ETHERTYPE_ARP){
         if(DEBUG)
@@ -98,7 +111,10 @@ void sr_handlepacket(struct sr_instance* sr,
     
 }/* end  */
 
-
+/*---------------------------------------------------------------------
+ * Method:
+ *
+ *---------------------------------------------------------------------*/
 void cachePacket(uint8_t *packet, struct sr_ethernet_hdr * header, int len,struct sr_instance* sr,char *inter)
 {
 
@@ -125,7 +141,51 @@ void cachePacket(uint8_t *packet, struct sr_ethernet_hdr * header, int len,struc
             temp2->next=temp;
         }
     
-}
+}/* end  */
+/*---------------------------------------------------------------------
+ * Method:
+ *
+ *---------------------------------------------------------------------*/
+void sr_handleICMPpacket(struct sr_instance* sr,
+                       uint8_t * packet/* lent */,
+                       unsigned int len,
+                       struct sr_if* inter,/* lent */
+                       struct sr_ethernet_hdr* header,
+                       char* interface){
+    
+    struct ip * ipheader = (struct ip*)(packet + sizeof(struct sr_ethernet_hdr));
+    struct icmp * icmpHeader=(struct icmp *) (packet + sizeof (struct sr_ethernet_hdr) + sizeof(struct ip));
+    uint32_t senderIP = ipheader->ip_src.s_addr;
+    uint32_t destinationIP = ipheader->ip_dst.s_addr;
+    int length = len - sizeof (struct sr_ethernet_hdr) - sizeof(struct ip);
+
+    if (icmpHeader->type == 8 && ipheader->ip_ttl>1) {
+        printf("\nICMP ECHO REQUEST\n ");
+        uint8_t  temp[ETHER_ADDR_LEN];
+        memcpy(temp, header->ether_dhost, ETHER_ADDR_LEN);
+
+        memcpy(header->ether_dhost, header->ether_shost, ETHER_ADDR_LEN);
+        memcpy(header->ether_shost, temp, ETHER_ADDR_LEN);
+
+        header->ether_type = htons(ETHERTYPE_IP);
+        ipheader->ip_src.s_addr=destinationIP;
+        ipheader->ip_dst.s_addr=senderIP;
+        icmpHeader->type=0;
+        icmpHeader->sum = 0;
+        icmpHeader->sum =cksum((uint8_t *) packet + sizeof (struct sr_ethernet_hdr) + ipheader->ip_hl * 4,length);
+        printf("\nSENDING ICMP ECHO REPLY.............\n ");
+        sr_send_packet(sr, packet, len, interface);
+    }
+    else if(ipheader->ip_ttl<=1|| ipheader->ip_p ==IPPROTO_UDP || ipheader->ip_p ==IPPROTO_TCP){
+        printf("\nICMP TCP UDP REQUEST\n ");
+        return;
+    }
+
+    
+    
+    
+    
+}/* end sr_handleICMPpacket */
 
 /*---------------------------------------------------------------------
  * Method:
@@ -137,10 +197,15 @@ void sr_handleIPpacket(struct sr_instance* sr,
                         struct sr_if* inter,/* lent */
                         struct sr_ethernet_hdr* header)
 {
-
+    struct ip * ipheader = ((struct ip*)(packet + sizeof(struct sr_ethernet_hdr)));
+    uint32_t senderIP = ipheader->ip_src.s_addr;
+    uint32_t destinationIP = ipheader->ip_dst.s_addr;
+    struct sr_rt* newInterface;
+    newInterface = RoutingTableLookUp(sr,destinationIP);
+    bool found=checkCache(destinationIP);
     printf("Handle IP packet \n ");
     
-    struct ip * ipheader = ((struct ip*)(packet + sizeof(struct sr_ethernet_hdr)));
+    
     
     if (ipheader->ip_v!=4) {
         printf("ERROR!! IP VERSION IS NOT 4\n");
@@ -154,16 +219,14 @@ void sr_handleIPpacket(struct sr_instance* sr,
         printf("DISCARD PACKET \n");
         return;
     }
-    if (ipheader->ip_ttl==0) {
+    if (ipheader->ip_ttl<=1) {
         printf("DISCARD PACKET, SEND A ICMP MESSAGE\n");
+        return;
+        
         //TODO: SEND A ICMP MESSAGE
     }
 
-    struct sr_rt* newInterface;
-    uint32_t senderIP = ipheader->ip_src.s_addr;
-    uint32_t destinationIP = ipheader->ip_dst.s_addr;
-    newInterface = RoutingTableLookUp(sr,destinationIP);
-    bool found=checkCache(destinationIP);
+
     if(found == false)// destinationIP not in cache
     {
 
@@ -197,7 +260,12 @@ void sr_handleIPpacket(struct sr_instance* sr,
 
 
 
-
+/*
+ **************************************************************************
+ Function: ForwardPacket
+ Description: ForwardPacket
+ ***************************************************************************
+ */
 void ForwardPacket(struct sr_instance * sr,struct sr_rt* newInterface,struct sr_ethernet_hdr * header,uint8_t * packet,unsigned int len,struct ip * ipheader, struct cache * node){
     
     for(int i=0;i<ETHER_ADDR_LEN;i++)
@@ -206,7 +274,8 @@ void ForwardPacket(struct sr_instance * sr,struct sr_rt* newInterface,struct sr_
     }
     
     ipheader->ip_ttl = ipheader->ip_ttl -1 ;
-    setIPchecksum(ipheader);
+    ipheader->ip_sum=0;
+    ipheader->ip_sum=cksum(((uint8_t*)(ipheader)),sizeof(struct ip));
     struct sr_if * iface = sr->if_list;
     while (iface)
     {
@@ -222,10 +291,15 @@ void ForwardPacket(struct sr_instance * sr,struct sr_rt* newInterface,struct sr_
     }
     printf("\n=================Sending the Packet !!!!!!================\n");
     sr_send_packet(sr,packet,len,newInterface->interface);
-}
+}/* end ForwardPacket */
 
 
-
+/*
+ **************************************************************************
+ Function: sendARPrequest
+ Description: send ARP request
+ ***************************************************************************
+ */
 void sendARPrequest(struct sr_instance * sr, uint32_t destinationIP, char* interface,struct sr_rt* newInterface)
 {
     printf("\nSending ARP Request \n");
@@ -271,10 +345,15 @@ void sendARPrequest(struct sr_instance * sr, uint32_t destinationIP, char* inter
         inter = inter->next;
     }
 
-}
+}/* end sendARPrequest */
 
 
-
+/*
+ **************************************************************************
+ Function: RoutingTableLookUp
+ Description: look up in routing table
+ ***************************************************************************
+ */
 
 struct sr_rt* RoutingTableLookUp(struct sr_instance* sr,uint32_t ipTarget)
 {
@@ -293,9 +372,14 @@ struct sr_rt* RoutingTableLookUp(struct sr_instance* sr,uint32_t ipTarget)
         temp = temp->next;
     }
     return temp;
-}
+}/* end RoutingTableLookUp */
 
-
+/*
+ **************************************************************************
+ Function: isGateway
+ Description: look up in routing table
+ ***************************************************************************
+ */
 bool isGateway(uint32_t ipTarget, struct sr_instance* sr)
 {
     struct sr_rt* routing_table =sr->routing_table;
@@ -310,7 +394,7 @@ bool isGateway(uint32_t ipTarget, struct sr_instance* sr)
     }
     return false;
     
-}
+}/* end isGateway */
 
 
 /*--------------------------------------------------------------------- 
@@ -370,7 +454,12 @@ void sr_handleARPpacket(struct sr_instance* sr,
 }/* end sr_handleARPpacket */
 
 
-
+/*
+ **************************************************************************
+ Function: sendCachedPacket
+ Description: send packet cached
+ ***************************************************************************
+ */
 void sendCachedPacket(uint32_t ip_addr)
 {
     printf("\n Sending the Cached Packet\n");
@@ -414,11 +503,16 @@ void sendCachedPacket(uint32_t ip_addr)
         }
         
     }
-}
+}/* end sendCachedPacket */
 
 
 
-
+/*
+ **************************************************************************
+ Function: addNewCache
+ Description: add new cache
+ ***************************************************************************
+ */
 
 void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]){
 
@@ -443,8 +537,14 @@ void addNewCache(uint32_t ip,unsigned char mac[ETHER_ADDR_LEN]){
     else{
         cache=temp;
     }
-}
+}/* end addNewCache */
 
+/*
+ **************************************************************************
+ Function: printCache
+ Description: print all cache just for debbuging
+ ***************************************************************************
+ */
 void printCache(){
     struct cache * walker=cache;
     while (walker) {
@@ -456,8 +556,15 @@ void printCache(){
         printf("============\n");
         walker=walker->next;
     }
-}
+}/* end printCache */
 
+
+/*
+ **************************************************************************
+ Function: checkCache
+ Description: check if present in cache
+ ***************************************************************************
+ */
 bool checkCache(uint32_t ip){
     struct cache * walker=cache;
     while(walker){
@@ -475,8 +582,14 @@ bool checkCache(uint32_t ip){
     if(DEBUG)
         printf("checkCache:NOT found in Cache\n");
     return false;
-}
+}/* end checkCache */
 
+/*
+ **************************************************************************
+ Function: getNode
+ Description: getNode
+ ***************************************************************************
+ */
 struct cache * getNode(uint32_t ip){
     
     struct cache * walker=cache;
@@ -495,12 +608,12 @@ struct cache * getNode(uint32_t ip){
     return NULL;
     
     
-}
+}/* end getNode */
 
 /*
  **************************************************************************
  Function: ip_sum_calc
- Description: Calculate the 16 bit IP sum.
+ Description: check the 16 bit IP sum.
  ***************************************************************************
  */
 uint16_t ip_checksum(void* vdata,size_t length) {
@@ -534,92 +647,39 @@ uint16_t ip_checksum(void* vdata,size_t length) {
     return htons(~acc);
 }/* end ip_checksum */
 
-
-uint16_t cksum(uint16_t *buf, int count)
+/*
+ **************************************************************************
+ Function: setChecksum
+ Description: Calculate the 16 bit IP sum.
+ ***************************************************************************
+ */
+uint16_t cksum(uint8_t* hdr, int len)
 {
-//    register uint32_t sum = 0;
-//    while (count--)
-//    {
-//        sum += *buf++;
-//        if (sum & 0xFFFF0000)
-//        {
-//            /* carry occurred,
-//             so wrap around */
-//            sum &= 0xFFFF;
-//            sum++;
-//        }
-//    }
-//    return  ~(sum & 0xFFFF);
-    register uint32_t sum = 0;
-
-    while (count > 1) {
-        sum += *buf++;
-        count -= 2;
-    }
-
-    if (count > 0)
-        sum += *((uint8_t*)buf);
-
-    while (sum >> 16)
-        sum = (sum & 0xffff) + (sum >> 16);
-
-    return(~sum);
-}
-
-
-void setIPchecksum(struct ip* ipHeader)
-{
-    //printf("\nCalculating checksum for IP ");
-    int i;
+    long sum = 0;
     
-    uint32_t calculatedSum = 0;
-    uint32_t sum = 0;
-    uint16_t* tmp = (uint16_t *) ipHeader;
-    
-    ipHeader->ip_sum = 0;
-    
-    for (i = 0; i < ipHeader->ip_hl * 2; i++)
+    while(len > 1)
     {
-        sum = sum + tmp[i];
+        sum += *((unsigned short*)hdr);
+        hdr = hdr + 2;
+        if(sum & 0x80000000)
+        {
+            sum = (sum & 0xFFFF) + (sum >> 16);
+        }
+        len -= 2;
     }
     
-    sum = (sum >> 16) + (sum & 0xFFFF);
-    sum = sum + (sum >> 16);
-    calculatedSum = ~sum;
-    ipHeader->ip_sum = calculatedSum;
+    if(len)
+    {
+        sum += (unsigned short) *(unsigned char *)hdr;
+    }
     
-    //printf("CheckSum :: %d", calculatedSum);
-}
-
-
-//uint16_t cksum(uint8_t* hdr, int len)
-//{
-//    long sum = 0;
-//
-//    while(len > 1)
-//    {
-//        sum += *((unsigned short*)hdr);
-//        hdr = hdr + 2;
-//        if(sum & 0x80000000)
-//        {
-//            sum = (sum & 0xFFFF) + (sum >> 16);
-//        }
-//        len -= 2;
-//    }
-//
-//    if(len)
-//    {
-//        sum += (unsigned short) *(unsigned char *)hdr;
-//    }
-//
-//    while(sum>>16)
-//    {
-//        sum = (sum & 0xFFFF) + (sum >> 16);
-//    }
-//
-//    return ~sum;
-//
-//}
+    while(sum>>16)
+    {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    
+    return ~sum;
+}/* end ip_checksum */
 
 
 
